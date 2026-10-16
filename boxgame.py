@@ -1,8 +1,12 @@
 Level = [
-    "OOOOO",
-    "ORBSO",
-    "O   O",
-    "OOOOO",
+   "OOOOOOOO",
+    "OR     O",
+    "O  B S O",
+    "O      O",
+    "O  B S O",
+    "O      O",
+    "O      O",
+    "OOOOOOOO",
 ]
 
 

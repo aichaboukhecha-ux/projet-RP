@@ -12,3 +12,4 @@ else:
     print("Expanded :", expanded)
     for state in goal.getPath():
         print(state, "\n")
+ 
