@@ -1,5 +1,5 @@
 Level = [
-   "OOOOOOOO",
+    "OOOOOOOO",
     "OR     O",
     "O  B S O",
     "O      O",
