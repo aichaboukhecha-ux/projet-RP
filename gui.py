@@ -7,7 +7,7 @@ A whimsical pixel-art fairy-forest GUI built on top of the existing solver.
 It uses ONLY the public API already present in the project:
 
     from boxgame import Level, parse_board      # board + SokobanPuzzle
-    from search   import bfs                    # solver
+    from search   import bfs, astar             # solvers
 
 Nothing in boxgame.py, search.py, main.py or puzzle.py is modified.
 """
@@ -22,7 +22,7 @@ import pygame
 
 from boxgame import parse_board
 from levels import LEVELS
-from search import bfs
+from search import bfs, astar
 
 
 def log(message):
@@ -75,7 +75,7 @@ STATS_H = STAT_ROWS * ROW_H
 BAR_Y = STATS_TOP + STATS_H + 4
 CONTROLS_Y = BAR_Y + 14 + 14
 BUTTONS_TOP = CONTROLS_Y + 30
-BUTTON_ROWS = 5                     # play/reset, prev/next, speed, level, full
+BUTTON_ROWS = 6                     # transport, level, algorithm, fullscreen
 BUTTONS_H = BUTTON_ROWS * BUTTON_H + (BUTTON_ROWS - 1) * BUTTON_GAP
 HINTS_Y = BUTTONS_TOP + BUTTONS_H + 22
 HINT_LINES = 6
@@ -291,7 +291,7 @@ class SolutionPlayer:
         self.path = path                  # list[SokobanPuzzle], index 0 = start
         self.actions = actions            # list[str]  "UP"/"DOWN"/"LEFT"/"RIGHT"
         self.cost = cost                  # goal.g
-        self.expanded = expanded          # from bfs()
+        self.expanded = expanded          # nodes expanded by selected search
         self.total = len(actions)         # number of steps
         self.delay = delay                # ms per step
         self.speed_index = SPEEDS.index(delay) if delay in SPEEDS \
@@ -690,6 +690,10 @@ def build_buttons(panel_rect):
                              pygame.Rect(x, top + 4 * (BUTTON_H + BUTTON_GAP),
                                          inner, BUTTON_H),
                              "FULLSCREEN"),
+        "algorithm": Button("algorithm",
+                            pygame.Rect(x, top + 5 * (BUTTON_H + BUTTON_GAP),
+                                        inner, BUTTON_H),
+                            "SEARCH: BFS"),
     }
 
 
@@ -712,7 +716,7 @@ def draw_panel(surface, panel_rect, assets, player, buttons, level_index,
     rows = [
         ("LEVEL",            "%d / %d" % (level_index + 1, len(LEVELS)),
          LAVENDER),
-        ("ALGORITHM",        "BFS", LAVENDER),
+        ("ALGORITHM",        player.algorithm, LAVENDER),
         ("STEP",             "%d / %d" % (player.step, player.total), TEXT),
         ("SOLUTION COST",    str(player.cost), TEXT),
         ("STATUS",           player.status,
@@ -750,6 +754,7 @@ def draw_panel(surface, panel_rect, assets, player, buttons, level_index,
                              else "PLAY")
     buttons["level_prev"].label = "LEVEL -"
     buttons["level_next"].label = "LEVEL +"
+    buttons["algorithm"].label = "SEARCH: %s  (CLICK)" % player.algorithm
     if mouse is None:
         mouse = pygame.mouse.get_pos()
     for button in buttons.values():
@@ -831,15 +836,16 @@ def board_origin(board_area, state):
 # --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
-def load_level(index, delay):
-    """Parse + BFS one level. Returns (puzzle, player, decorations)."""
+def load_level(index, delay, algorithm="BFS"):
+    """Parse and solve one level with BFS or A*."""
     puzzle = parse_board(LEVELS[index])
 
     started = time.perf_counter()
-    goal_node, expanded = bfs(puzzle)
+    solver = bfs if algorithm == "BFS" else astar
+    goal_node, expanded = solver(puzzle)
     elapsed = time.perf_counter() - started
-    log("Level %d: BFS %d expanded nodes in %.4f s"
-        % (index + 1, expanded, elapsed))
+    log("Level %d: %s %d expanded nodes in %.4f s"
+        % (index + 1, algorithm, expanded, elapsed))
 
     if goal_node is None:
         # solver failed: keep the window usable, but never fake a solution
@@ -850,6 +856,8 @@ def load_level(index, delay):
         player = SolutionPlayer(goal_node.getPath(),      # list[SokobanPuzzle]
                                 goal_node.getSolution(),  # list[str]
                                 goal_node.g, expanded, delay)
+
+    player.algorithm = algorithm
 
     return puzzle, player, pick_decorations(puzzle, player.path)
 
@@ -947,20 +955,30 @@ def main():
     update_present()
     AUDIO.start_music()
 
-    # honest "solving" state: the splash really is displayed while bfs runs
-    draw_splash(frame, assets, "Solving with BFS ...")
+    # Show the selected solver while the initial level is being solved.
+    algorithm = "BFS"
+    draw_splash(frame, assets, "Solving with %s ..." % algorithm)
     present()
 
     level_index = 0
     delay = SPEEDS[DEFAULT_SPEED]
-    puzzle, player, decorations = load_level(level_index, delay)
+    puzzle, player, decorations = load_level(level_index, delay, algorithm)
     buttons = build_buttons(panel_rect)
 
     def switch_level(new_index):
         """Move to another level, keeping the current animation speed."""
         nonlocal level_index, puzzle, player, decorations
         level_index = (new_index % len(LEVELS))
-        puzzle, player, decorations = load_level(level_index, delay)
+        puzzle, player, decorations = load_level(level_index, delay, algorithm)
+        sfx("click")
+
+    def toggle_algorithm():
+        """Switch solver and compute a fresh solution for the current level."""
+        nonlocal algorithm, puzzle, player, decorations
+        algorithm = "A*" if algorithm == "BFS" else "BFS"
+        draw_splash(frame, assets, "Solving with %s ..." % algorithm)
+        present()
+        puzzle, player, decorations = load_level(level_index, delay, algorithm)
         sfx("click")
 
     clock = pygame.time.Clock()
@@ -998,6 +1016,8 @@ def main():
                             switch_level(level_index - 1)
                         elif button.key == "fullscreen":
                             set_fullscreen(not fullscreen)
+                        elif button.key == "algorithm":
+                            toggle_algorithm()
 
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
