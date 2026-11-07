@@ -1,28 +1,19 @@
-"""Sokoban Fairy Puzzle - Sokoban graphical interface (Part C).
+"""Sokoban Fairy Puzzle - Pygame interface.
 
-A whimsical pixel-art fairy-forest GUI built on top of the existing solver.
-
-    Run:  python gui.py
-
-It uses ONLY the public API already present in the project:
-
-    from boxgame import Level, parse_board      # board + SokobanPuzzle
-    from search   import bfs                    # solver
-
-Nothing in boxgame.py, search.py, main.py or puzzle.py is modified.
+Run: python gui.py
+A changes the algorithm, C opens the comparison screen.
 """
 
 import math
 import os
 import random
 import sys
-import time
 
 import pygame
 
 from boxgame import parse_board
 from levels import LEVELS
-from search import bfs
+from search import astar, bfs, h1, h2, h3, DEFAULT_NODE_LIMIT
 
 
 def log(message):
@@ -53,9 +44,7 @@ def enable_dpi_awareness():
         pass
 
 
-# --------------------------------------------------------------------------
 # Layout constants
-# --------------------------------------------------------------------------
 TILE = 64              # one logical grid cell (px)
 PLAYER_SPRITE = 48     # fairy displayed size (16x16 -> 48x48, exact 3x)
 SPRITE = 32            # goal/target sprite displayed size (16x16 -> 32x32)
@@ -78,7 +67,7 @@ BUTTONS_TOP = CONTROLS_Y + 30
 BUTTON_ROWS = 5                     # play/reset, prev/next, speed, level, full
 BUTTONS_H = BUTTON_ROWS * BUTTON_H + (BUTTON_ROWS - 1) * BUTTON_GAP
 HINTS_Y = BUTTONS_TOP + BUTTONS_H + 22
-HINT_LINES = 6
+HINT_LINES = 7
 HINTS_H = HINT_LINES * 21
 PANEL_MIN_H = HINTS_Y + HINTS_H + PANEL_PAD
 
@@ -86,6 +75,15 @@ PANEL_MIN_H = HINTS_Y + HINTS_H + PANEL_PAD
 # quickest, so a higher speed_index always means a faster playback.
 SPEEDS = [1000, 700, 450, 250, 120, 60, 30]
 DEFAULT_SPEED = 1                        # index -> 700 ms
+
+# label, heuristic, use_deadlock, theoretical complexity
+ALGORITHMS = [
+    ("BFS", None, False, "O(b^d) time / space"),
+    ("A* h1", h1, False, "O(b^d) worst; h O(B)"),
+    ("A* h2", h2, False, "O(b^d) worst; h O(B*T)"),
+    ("A* h3", h3, False, "O(b^d) worst; h O(B*2^B)"),
+    ("A* h3+deadlock", h3, True, "O(b^d) worst; h O(B*2^B)+O(B)"),
+]
 
 ACTION_TO_DIR = {
     "UP": "up",
@@ -97,9 +95,7 @@ ACTION_TO_DIR = {
 TITLE = "SOKOBAN FAIRY PUZZLE"   # shown in the header, splash and caption
 CAPTION = "Sokoban Fairy Puzzle"
 
-# --------------------------------------------------------------------------
 # Palette - dark purple / lavender / forest green / warm brown
-# --------------------------------------------------------------------------
 BG_DEEP      = (24, 15, 36)      # window background
 PANEL_BG     = (43, 28, 64)      # side panel
 PANEL_EDGE   = (110, 84, 154)
@@ -124,12 +120,11 @@ STATUS_COLORS = {
     "PAUSED":    AMBER,
     "SOLVED":    GOLD,
     "NO SOLUTION": PINK,
+    "LIMIT REACHED": AMBER,
 }
 
 
-# --------------------------------------------------------------------------
 # Asset loading (never crashes - every failure falls back to a drawn shape)
-# --------------------------------------------------------------------------
 class Assets:
     """Loads PNG / TTF files from ./assets and pre-scales them for the board."""
 
@@ -208,11 +203,8 @@ class Assets:
         return font
 
 
-# --------------------------------------------------------------------------
-# --------------------------------------------------------------------------
 # Audio - optional.  Every call degrades to a no-op when there is no sound
 # device, so the game still runs (and the tests still pass) without one.
-# --------------------------------------------------------------------------
 class Audio:
     """Loads the WAVs shipped in ``assets/sounds`` and plays them on demand."""
 
@@ -281,7 +273,6 @@ def sfx(name):
 
 
 # Solution playback (timer based - no time.sleep() anywhere)
-# --------------------------------------------------------------------------
 class SolutionPlayer:
     """Steps through the states returned by Node.getPath()."""
 
@@ -299,6 +290,8 @@ class SolutionPlayer:
         self.step = 0
         self.status = self.READY
         self.facing = "down"
+        self.algorithm = "BFS"
+        self.generated = 0
         self._last = pygame.time.get_ticks()
 
     # -- current frame -----------------------------------------------------
@@ -404,9 +397,7 @@ class SolutionPlayer:
             sfx("bump")                       # already at minimum speed
 
 
-# --------------------------------------------------------------------------
 # Decorations - computed once, drawn under the game objects
-# --------------------------------------------------------------------------
 def pick_decorations(initial_state, path, rng_seed=20261017):
     """Cells that never hold a wall, target, box or the player.
 
@@ -433,9 +424,7 @@ def pick_decorations(initial_state, path, rng_seed=20261017):
     return [(pos, kinds[i % len(kinds)]) for i, pos in enumerate(chosen)]
 
 
-# --------------------------------------------------------------------------
 # Fallback drawings (used only when a PNG is missing)
-# --------------------------------------------------------------------------
 def draw_fallback_wall(surface, rect):
     pygame.draw.rect(surface, WALL_FALL, rect)
     pygame.draw.line(surface, (104, 70, 100), rect.topleft,
@@ -478,9 +467,7 @@ def draw_fallback_target(surface, rect, glow):
     pygame.draw.circle(surface, LAVENDER, center, TILE // 3, 2)
 
 
-# --------------------------------------------------------------------------
 # Drawing
-# --------------------------------------------------------------------------
 def draw_header(surface, assets, width, level_index):
     """Title bar with the current level number and a few twinkling stars."""
     font = assets.font("PressStart2P-Regular.ttf", 18)
@@ -647,9 +634,7 @@ def draw_board(surface, state, assets, facing, decorations, board_origin):
     pygame.draw.rect(surface, LAVENDER_DIM, frame, 3)
 
 
-# --------------------------------------------------------------------------
 # Buttons
-# --------------------------------------------------------------------------
 class Button:
     def __init__(self, key, rect, label):
         self.key = key
@@ -693,9 +678,7 @@ def build_buttons(panel_rect):
     }
 
 
-# --------------------------------------------------------------------------
 # Side panel
-# --------------------------------------------------------------------------
 def draw_panel(surface, panel_rect, assets, player, buttons, level_index,
                mouse=None):
     pygame.draw.rect(surface, PANEL_BG, panel_rect, border_radius=12)
@@ -712,13 +695,13 @@ def draw_panel(surface, panel_rect, assets, player, buttons, level_index,
     rows = [
         ("LEVEL",            "%d / %d" % (level_index + 1, len(LEVELS)),
          LAVENDER),
-        ("ALGORITHM",        "BFS", LAVENDER),
+        ("ALGORITHM",        player.algorithm, LAVENDER),
         ("STEP",             "%d / %d" % (player.step, player.total), TEXT),
         ("SOLUTION COST",    str(player.cost), TEXT),
         ("STATUS",           player.status,
                              STATUS_COLORS.get(player.status, TEXT)),
         ("EXPANDED NODES",   str(player.expanded), TEXT),
-        ("GENERATED NODES",  "n/a", TEXT_DIM),
+        ("GENERATED NODES",  str(player.generated), TEXT),
     ]
 
     for label, value, color in rows:
@@ -760,10 +743,11 @@ def draw_panel(surface, panel_rect, assets, player, buttons, level_index,
     hints = [
         "SPACE   play / pause",
         "R       reset",
-        "< / >   prev / next step",
-        "- / +   speed   [ ] level",
-        "F11     fullscreen",
-        "ESC     quit",
+        "< / >   prev / next",
+        "- / +   speed",
+        "A / C   algo / compare",
+        "[ ]     level",
+        "F11 / ESC  full / quit",
     ]
     for hint in hints:
         surface.blit(small_font.render(hint, True, TEXT_DIM), (x, y))
@@ -776,9 +760,10 @@ def draw_status_message(surface, assets, rect, player):
         text = font.render("PUZZLE SOLVED!", True, GOLD)
         pos = text.get_rect(midtop=(rect.centerx, rect.bottom + 14))
         surface.blit(text, pos)
-    elif player.status == "NO SOLUTION":
+    elif player.status in ("NO SOLUTION", "LIMIT REACHED"):
         font = assets.font("PressStart2P-Regular.ttf", 12)
-        text = font.render("NO SOLUTION", True, PINK)
+        text = font.render(player.status, True,
+                           STATUS_COLORS.get(player.status, PINK))
         surface.blit(text, text.get_rect(center=rect.center))
 
 
@@ -795,9 +780,120 @@ def draw_splash(surface, assets, text):
     pygame.display.flip()
 
 
-# --------------------------------------------------------------------------
+def short_label(label):
+    """Compact algorithm name for the bar charts."""
+    return label.replace("A* ", "").replace("+deadlock", "+dead")
+
+
+def draw_comparison(surface, assets, results, level_index):
+    """Table and scaled bars for the five cached algorithm runs."""
+    width, height = surface.get_size()
+    surface.fill(BG_DEEP)
+
+    title_font = assets.font("PressStart2P-Regular.ttf", 18)
+    head_font = assets.font("Silkscreen-Bold.ttf", 14)
+    row_font = assets.font("Silkscreen-Bold.ttf", 16)
+    small_font = assets.font("Silkscreen-Regular.ttf", 12)
+
+    title = title_font.render("COMPLEXITY COMPARISON", True, LAVENDER)
+    surface.blit(title, title.get_rect(centerx=width // 2, y=20))
+    sub = small_font.render(
+        "LEVEL %d / %d   -   %d algorithms"
+        % (level_index + 1, len(LEVELS), len(results)),
+        True, PINK)
+    surface.blit(sub, sub.get_rect(centerx=width // 2, y=48))
+
+    best = None
+    for i, result in enumerate(results):
+        if result["goal"] is None:
+            continue
+        if best is None or result["expanded"] < results[best]["expanded"]:
+            best = i
+
+    left = 40
+    right = width - 40
+    columns = [left, left + 260, left + 390, left + 520, left + 650]
+    headers = ["ALGORITHM", "EXPANDED", "GENERATED", "HEURISTIC", "DEADLOCK"]
+    for x, text in zip(columns, headers):
+        surface.blit(head_font.render(text, True, TEXT_DIM), (x, 84))
+    pygame.draw.line(surface, PANEL_EDGE, (left, 106), (right, 106), 2)
+
+    top = 116
+    row_h = 62
+    for i, result in enumerate(results):
+        y = top + i * row_h
+        rect = pygame.Rect(left - 8, y, right - left + 16, row_h - 6)
+        if i == best:
+            pygame.draw.rect(surface, (60, 48, 30), rect, border_radius=8)
+            pygame.draw.rect(surface, GOLD, rect, 2, border_radius=8)
+
+        name_color = GOLD if i == best else LAVENDER
+        surface.blit(row_font.render(result["label"], True, name_color),
+                     (columns[0], y + 4))
+        surface.blit(small_font.render(result["theory"], True, TEXT_DIM),
+                     (columns[0], y + 28))
+
+        for key, x in (("expanded", columns[1]),
+                       ("generated", columns[2]),
+                       ("heuristic_calls", columns[3]),
+                       ("deadlock_checks", columns[4])):
+            if key in ("expanded", "generated") and result["goal"] is None:
+                text = "limit reached" if result["limit_reached"] \
+                    else "no solution"
+                surface.blit(small_font.render(text, True, PINK), (x, y + 20))
+            else:
+                surface.blit(row_font.render(str(result[key]), True, TEXT),
+                             (x, y + 18))
+
+    half = (right - left - 30) // 2
+    charts = [
+        ("EXPANDED NODES", "expanded", left, half),
+        ("GENERATED NODES", "generated", left + half + 30, half),
+    ]
+    chart_top = 460
+    for chart_title, key, x, chart_w in charts:
+        surface.blit(head_font.render(chart_title, True, LAVENDER),
+                     (x, chart_top))
+        values = [r[key] for r in results
+                  if r["goal"] is not None and not r["limit_reached"]]
+        max_value = max(values) if values else 1
+
+        label_w = 85
+        bar_x = x + label_w
+        bar_w = chart_w - label_w - 70
+
+        for i, result in enumerate(results):
+            y = chart_top + 28 + i * 30
+            surface.blit(small_font.render(short_label(result["label"]),
+                                           True, TEXT_DIM), (x, y + 2))
+            if result["goal"] is None:
+                text = "limit reached" if result["limit_reached"] \
+                    else "no solution"
+                surface.blit(small_font.render(text, True, PINK),
+                             (bar_x, y + 2))
+                continue
+
+            value = result[key]
+            filled = max(2, int(bar_w * value / max_value))
+            color = GOLD if i == best else LAVENDER_DIM
+            pygame.draw.rect(surface, (33, 21, 49),
+                             pygame.Rect(bar_x, y, bar_w, 18),
+                             border_radius=5)
+            pygame.draw.rect(surface, color,
+                             pygame.Rect(bar_x, y, filled, 18),
+                             border_radius=5)
+            surface.blit(small_font.render(str(value), True, TEXT),
+                         (bar_x + bar_w + 8, y + 2))
+
+    note = small_font.render(
+        "fewest expanded nodes = best (gold); limit = %d nodes"
+        % DEFAULT_NODE_LIMIT, True, TEXT_DIM)
+    surface.blit(note, note.get_rect(centerx=width // 2, y=672))
+    close = small_font.render("C / ESC   close", True, LAVENDER)
+    surface.blit(close, close.get_rect(centerx=width // 2, y=698))
+
+
 # Window geometry (adapts to the board size)
-# --------------------------------------------------------------------------
 def max_board_size(puzzles):
     """Widest / tallest board across all levels (drives one fixed window)."""
     return (max(p.width for p in puzzles),
@@ -828,30 +924,66 @@ def board_origin(board_area, state):
             board_area.y + (board_area.height - h) // 2)
 
 
-# --------------------------------------------------------------------------
 # Entry point
-# --------------------------------------------------------------------------
-def load_level(index, delay):
-    """Parse + BFS one level. Returns (puzzle, player, decorations)."""
-    puzzle = parse_board(LEVELS[index])
+def run_all_algorithms(puzzle, node_limit=DEFAULT_NODE_LIMIT):
+    """Run the five algorithms once and keep their counters."""
+    results = []
+    for label, heuristic, use_deadlock, theory in ALGORITHMS:
+        if heuristic is None:
+            stats = {}
+            goal, expanded = bfs(puzzle, stats, node_limit=node_limit)
+            generated = stats.get("generated", 0)
+            limit_reached = stats.get("limit_reached", False)
+            heuristic_calls = 0
+            deadlock_checks = 0
+        else:
+            found = astar(puzzle, heuristic, node_limit=node_limit,
+                          use_deadlock=use_deadlock)
+            goal, expanded = found
+            generated = found.generated
+            limit_reached = found.limit_reached
+            heuristic_calls = found.heuristic_calls
+            deadlock_checks = found.deadlock_checks
 
-    started = time.perf_counter()
-    goal_node, expanded = bfs(puzzle)
-    elapsed = time.perf_counter() - started
-    log("Level %d: BFS %d expanded nodes in %.4f s"
-        % (index + 1, expanded, elapsed))
+        results.append({
+            "label": label,
+            "theory": theory,
+            "goal": goal,
+            "cost": goal.g if goal is not None else 0,
+            "expanded": expanded,
+            "generated": generated,
+            "heuristic_calls": heuristic_calls,
+            "deadlock_checks": deadlock_checks,
+            "limit_reached": limit_reached,
+        })
+    return results
 
-    if goal_node is None:
-        # solver failed: keep the window usable, but never fake a solution
-        player = SolutionPlayer([puzzle], [], 0, expanded, delay)
-        player.status = "NO SOLUTION"
+
+def make_player(puzzle, results, algorithm, delay):
+    """Build the playback object for one cached algorithm result."""
+    result = results[algorithm % len(results)]
+    if result["goal"] is None:
+        player = SolutionPlayer([puzzle], [], 0, result["expanded"], delay)
+        player.status = "LIMIT REACHED" if result["limit_reached"] \
+            else "NO SOLUTION"
         player.total = 0
     else:
-        player = SolutionPlayer(goal_node.getPath(),      # list[SokobanPuzzle]
-                                goal_node.getSolution(),  # list[str]
-                                goal_node.g, expanded, delay)
+        player = SolutionPlayer(result["goal"].getPath(),
+                                result["goal"].getSolution(),
+                                result["goal"].g, result["expanded"],
+                                delay)
+    player.algorithm = result["label"]
+    player.generated = result["generated"]
+    return player
 
-    return puzzle, player, pick_decorations(puzzle, player.path)
+
+def load_level(index, delay, algorithm=0):
+    """Parse one level, run the five algorithms, return the playback data."""
+    puzzle = parse_board(LEVELS[index])
+    results = run_all_algorithms(puzzle)
+    player = make_player(puzzle, results, algorithm, delay)
+    log("Level %d: %d algorithms ready" % (index + 1, len(results)))
+    return (puzzle, player, pick_decorations(puzzle, player.path), results)
 
 
 def main():
@@ -947,20 +1079,34 @@ def main():
     update_present()
     AUDIO.start_music()
 
-    # honest "solving" state: the splash really is displayed while bfs runs
-    draw_splash(frame, assets, "Solving with BFS ...")
+    # the splash really is displayed while the five algorithms run
+    draw_splash(frame, assets, "Solving with 5 algorithms ...")
     present()
 
     level_index = 0
+    algorithm_index = 0
+    show_comparison = False
     delay = SPEEDS[DEFAULT_SPEED]
-    puzzle, player, decorations = load_level(level_index, delay)
+    puzzle, player, decorations, results = load_level(level_index, delay,
+                                                      algorithm_index)
     buttons = build_buttons(panel_rect)
 
     def switch_level(new_index):
-        """Move to another level, keeping the current animation speed."""
-        nonlocal level_index, puzzle, player, decorations
+        """Move to another level, keeping speed and algorithm."""
+        nonlocal level_index, puzzle, player, decorations, results
         level_index = (new_index % len(LEVELS))
-        puzzle, player, decorations = load_level(level_index, delay)
+        draw_splash(frame, assets, "Solving with 5 algorithms ...")
+        present()
+        puzzle, player, decorations, results = load_level(
+            level_index, delay, algorithm_index)
+        sfx("click")
+
+    def choose_algorithm(new_index):
+        """Use another cached algorithm for playback, without a new search."""
+        nonlocal algorithm_index, player, decorations
+        algorithm_index = new_index % len(ALGORITHMS)
+        player = make_player(puzzle, results, algorithm_index, delay)
+        decorations = pick_decorations(puzzle, player.path)
         sfx("click")
 
     clock = pygame.time.Clock()
@@ -974,6 +1120,8 @@ def main():
                 running = False
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if show_comparison:
+                    continue
                 hit = to_logical(event.pos)
                 for button in buttons.values():
                     if button.rect.collidepoint(hit):
@@ -1000,10 +1148,20 @@ def main():
                             set_fullscreen(not fullscreen)
 
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+                if event.key == pygame.K_c:
+                    show_comparison = not show_comparison
+                    sfx("click")
+                elif show_comparison:
+                    if event.key == pygame.K_ESCAPE:
+                        show_comparison = False
+                    elif event.key in (pygame.K_F11, pygame.K_f):
+                        set_fullscreen(not fullscreen)
+                elif event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key in (pygame.K_F11, pygame.K_f):
                     set_fullscreen(not fullscreen)
+                elif event.key == pygame.K_a:
+                    choose_algorithm(algorithm_index + 1)
                 elif event.key == pygame.K_SPACE:
                     player.toggle()
                 elif event.key == pygame.K_r:
@@ -1030,20 +1188,21 @@ def main():
 
         player.update(now)
 
-        origin = board_origin(board_area, player.state)
-
-        # ---- draw into the logical frame --------------------------------
-        frame.fill(BG_DEEP)
-        draw_header(frame, assets, width, level_index)
-        draw_board(frame, player.state, assets, player.facing,
-                   decorations, origin)
-        draw_panel(frame, panel_rect, assets, player, buttons, level_index,
-                   mouse=to_logical(pygame.mouse.get_pos()))
-        draw_status_message(frame, assets,
-                            pygame.Rect(origin[0], origin[1],
-                                        player.state.width * TILE,
-                                        player.state.height * TILE),
-                            player)
+        if show_comparison:
+            draw_comparison(frame, assets, results, level_index)
+        else:
+            origin = board_origin(board_area, player.state)
+            frame.fill(BG_DEEP)
+            draw_header(frame, assets, width, level_index)
+            draw_board(frame, player.state, assets, player.facing,
+                       decorations, origin)
+            draw_panel(frame, panel_rect, assets, player, buttons, level_index,
+                       mouse=to_logical(pygame.mouse.get_pos()))
+            draw_status_message(frame, assets,
+                                pygame.Rect(origin[0], origin[1],
+                                            player.state.width * TILE,
+                                            player.state.height * TILE),
+                                player)
 
         present()
         clock.tick(60)

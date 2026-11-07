@@ -1,35 +1,15 @@
-"""Level definitions for "Sokoban Fairy Puzzle" (Part C).
+"""The 13 levels: 6 original, then the 5 boards of Figure 4, then the 2 of Figure 7.
 
-Every level is a ``list[str]`` in the exact ASCII format understood by
-``boxgame.parse_board``:
-
-    O   wall            R   player            B   box
-    S   target/floor    .   player on target  *   box on target
-    ' ' floor
-
-The levels carry no display names: the header only ever shows the level
-number.  They are stored here in ascending difficulty (facile -> difficile),
-ordered by the BFS figures below, so level 1 is the gentlest warm-up and
-level 6 the hardest:
-
-    level   solution cost   nodes expanded   boxes   size
-      1          7               30            1      7x6
-      2          8               42            1      8x8
-      3          8              212            2      8x8
-      4         10              630            2      8x8
-      5         12             2010            2      8x7
-      6         13             1139            2      8x8
-
-Level 4 is the team's original board, imported straight from boxgame so the
-board itself is preserved unchanged.  boxgame.py and search.py are never
-modified.
+O wall, R player, B box, S target, . player on target, * box on target.
 """
 
 from boxgame import Level as ORIGINAL_LEVEL
+from figure4_boards import FIGURE4, FIGURE4_ORDER
+from figure7_boards import FIGURE7, FIGURE7_ORDER
 
 
 LEVELS = [
-    # 1 ------------------------------------------------ easiest: 1 box, 7 pushes
+    # 1 - easiest: 1 box, 7 pushes
     [
         "OOOOOOO",
         "OR    O",
@@ -39,7 +19,7 @@ LEVELS = [
         "OOOOOOO",
     ],
 
-    # 2 ------------------------------------------------ 1 box, walled column
+    # 2 - 1 box, walled column
     [
         "OOOOOOOO",
         "OR     O",
@@ -51,7 +31,7 @@ LEVELS = [
         "OOOOOOOO",
     ],
 
-    # 3 ------------------------------------------------ 2 boxes, 8 pushes
+    # 3 - 2 boxes, 8 pushes
     [
         "OOOOOOOO",
         "OR   O O",
@@ -63,10 +43,10 @@ LEVELS = [
         "OOOOOOOO",
     ],
 
-    # 4 ------------------------------------------------ the team's original board
+    # 4 - the team's original board
     ORIGINAL_LEVEL,
 
-    # 5 ------------------------------------------------ two clean lanes, 12 pushes
+    # 5 - two clean lanes, 12 pushes
     [
         "OOOOOOOO",
         "OR     O",
@@ -77,7 +57,7 @@ LEVELS = [
         "OOOOOOOO",
     ],
 
-    # 6 ------------------------------------------------ hardest: 13 pushes, 1139 nodes
+    # 6 - hardest: 13 pushes, 1139 nodes
     [
         "OOOOOOOO",
         "OR     O",
@@ -89,6 +69,10 @@ LEVELS = [
         "OOOOOOOO",
     ],
 ]
+
+# 7-11: Figure 4.  12-13: Figure 7.
+LEVELS += [FIGURE4[name] for name in FIGURE4_ORDER]
+LEVELS += [FIGURE7[name] for name in FIGURE7_ORDER]
 
 
 def level_count():

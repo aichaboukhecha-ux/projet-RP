@@ -11,7 +11,6 @@ Level = [
 
 
 class SokobanPuzzle:
-  
 
     DIRECTIONS = {
         "UP": (-1, 0),
@@ -36,7 +35,6 @@ class SokobanPuzzle:
         return self.targets <= self.boxes   # every target holds a box
 
     def stateKey(self):
-        # player position + box positions fully identify a state
         return (self.player, tuple(sorted(self.boxes)))
 
     def __eq__(self, other):
@@ -130,16 +128,10 @@ class Node:
         self.parent = parent
         self.action = action
         self.g = g
-        # f = g + h.  For uninformed search (BFS) h is 0, so f starts at g;
-        # A* refreshes it through setF() before pushing onto the frontier.
         self.f = g
 
     def setF(self, heuristic):
-        """f(n) = g(n) + h(n), with h evaluated on this node's state.
-
-        `heuristic` is any callable state -> int.  Returns f, so the value
-        can be used inline when pushing onto the priority queue.
-        """
+        """Set f = g + h(state) and return it."""
         self.f = self.g + heuristic(self.state)
         return self.f
 
