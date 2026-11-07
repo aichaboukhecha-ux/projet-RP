@@ -65,10 +65,13 @@ class SokobanPuzzle:
                 self.height, self.width)))
         return successors
 
-    def __str__(self):
-        rows = []
+    def toGrid(self):
+        """The state as a 2D grid of the symbols of the subject:
+        R player, O wall, ' ' empty, S target, B box,
+        '.' player on a target, '*' box on a target."""
+        grid = []
         for r in range(self.height):
-            line = ""
+            line = []
             for c in range(self.width):
                 p = (r, c)
                 if p in self.walls:
@@ -81,9 +84,12 @@ class SokobanPuzzle:
                     ch = "S"
                 else:
                     ch = " "
-                line += ch
-            rows.append(line)
-        return "\n".join(rows)
+                line.append(ch)
+            grid.append(line)
+        return grid
+
+    def __str__(self):
+        return "\n".join("".join(row) for row in self.toGrid())
 
 
 def parse_board(board):

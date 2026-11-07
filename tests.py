@@ -653,6 +653,87 @@ if REAL:
           "%s vs %s" % (observed.get("after_f11"),
                         observed.get("windowed")))
 
+# ---------------------------------------------------------------------------
+print("\n== 15. OPEN and CLOSED lists ==")
+from search import OpenFIFO, OpenPriority, Closed   # noqa: E402
+from boxgame import Node                              # noqa: E402
+
+demo = parse_board(["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"])
+a = Node(demo)
+kids = [Node(st, a, act, 1) for act, st in demo.successorFunction()]
+
+fifo = OpenFIFO()
+for k in kids:
+    fifo.push(k)
+check("OpenFIFO knows the states it holds",
+      all(k.state in fifo for k in kids) and a.state not in fifo)
+check("OpenFIFO is first in, first out", fifo.pop() is kids[0])
+check("a popped node leaves OPEN", kids[0].state not in fifo
+      and len(fifo) == len(kids) - 1)
+
+prio = OpenPriority()
+for f, k in zip((5, 2, 9), kids):
+    k.f = f
+    prio.push(k)
+check("OpenPriority gives the smallest f first", prio.pop() is kids[1])
+better = Node(kids[0].state, a, kids[0].action, 1)
+better.f = 1
+prio.push(better)
+check("a better node for the same state replaces the old one in OPEN",
+      len(prio) == 2 and prio.get(kids[0].state) is better)
+check("the replaced entry is skipped when popping",
+      prio.pop() is better and prio.pop() is kids[2] and prio.pop() is None)
+
+closed = Closed()
+closed.add(a)
+check("Closed stores and finds an expanded node",
+      a.state in closed and closed.get(a.state) is a and len(closed) == 1)
+closed.remove(a.state)
+check("Closed.remove reopens a state", a.state not in closed)
+
+stats = {}
+goal_b, exp_b = bfs(demo, stats)
+check("BFS reports OPEN / CLOSED sizes",
+      stats["closed_size"] == exp_b - 1 and stats["open_size"] > 0
+      and stats["max_open"] >= stats["open_size"], str(stats))
+check("BFS: every generated node is in OPEN or CLOSED (+ the goal)",
+      stats["generated"] == stats["open_size"] + stats["closed_size"] + 1,
+      str(stats))
+res = astar(demo, h3)
+check("A* reports OPEN / CLOSED sizes",
+      res.closed_size == res.expanded - 1 and res.max_open >= res.open_size,
+      "closed=%d open=%d max_open=%d" % (res.closed_size, res.open_size,
+                                         res.max_open))
+check("A* never keeps a state in OPEN and CLOSED at the same time",
+      res.generated >= res.open_size + res.closed_size)
+
+# BFS and A* count iterations the same way: the goal is tested when it is
+# expanded, so the goal node itself is one iteration for both.
+tiny_state = parse_board(["OOOOOO", "OSBR O", "OOOOOO"])
+tg, te = bfs(tiny_state)
+ag = astar(tiny_state, h1)
+check("BFS and A* h1 expand the same number of nodes on a 1-D corridor",
+      te == ag.expanded, "%d vs %d" % (te, ag.expanded))
+
+gui_results = gui.run_all_algorithms(parse_board(
+    ["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"]))
+check("the GUI results carry OPEN / CLOSED sizes",
+      all(r["closed_size"] > 0 and r["max_open"] >= r["open_size"]
+          for r in gui_results))
+gui_player = gui.make_player(parse_board(
+    ["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"]), gui_results, 3, 400)
+check("OPEN / CLOSED reach the side panel",
+      gui_player.open_size == gui_results[3]["open_size"]
+      and gui_player.closed_size == gui_results[3]["closed_size"])
+
+rt = parse_board(["OOOOOOO", "OS*B  O", "O   R O", "OOOOOOO"])
+check("toGrid() gives the 2D grid of the subject's symbols",
+      ["".join(r) for r in rt.toGrid()]
+      == ["OOOOOOO", "OS*B  O", "O   R O", "OOOOOOO"])
+dot = parse_board(["OOOOO", "O.B*O", "OOOOO"])
+check("'.' (player on target) round-trips through toGrid()",
+      dot.toGrid()[1][1] == "." and dot.toGrid()[1][3] == "*")
+
 pygame.quit()
 
 print("\n%s  (%d failed)" % ("ALL TESTS PASSED" if not FAILURES

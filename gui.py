@@ -53,13 +53,13 @@ MARGIN = 24
 HEADER_H = 76
 PANEL_W = 300
 PANEL_PAD = 18
-BUTTON_H = 40
-BUTTON_GAP = 10
+BUTTON_H = 36
+BUTTON_GAP = 6
 ROW_H = 42             # stats row pitch in the side panel
 
 # --- side-panel vertical layout (all relative to panel_rect.y) ------------
 STATS_TOP = PANEL_PAD
-STAT_ROWS = 7                       # LEVEL, ALGORITHM, STEP, COST, ...
+STAT_ROWS = 8                       # LEVEL, ALGORITHM, STEP, COST, ..., OPEN / CLOSED
 STATS_H = STAT_ROWS * ROW_H
 BAR_Y = STATS_TOP + STATS_H + 4
 CONTROLS_Y = BAR_Y + 14 + 14
@@ -292,6 +292,8 @@ class SolutionPlayer:
         self.facing = "down"
         self.algorithm = "BFS"
         self.generated = 0
+        self.open_size = 0                # nodes left in OPEN
+        self.closed_size = 0              # nodes in CLOSED
         self._last = pygame.time.get_ticks()
 
     # -- current frame -----------------------------------------------------
@@ -702,6 +704,8 @@ def draw_panel(surface, panel_rect, assets, player, buttons, level_index,
                              STATUS_COLORS.get(player.status, TEXT)),
         ("EXPANDED NODES",   str(player.expanded), TEXT),
         ("GENERATED NODES",  str(player.generated), TEXT),
+        ("OPEN / CLOSED",    "%d / %d" % (player.open_size,
+                                          player.closed_size), TEXT),
     ]
 
     for label, value, color in rows:
@@ -812,10 +816,14 @@ def draw_comparison(surface, assets, results, level_index):
 
     left = 40
     right = width - 40
-    columns = [left, left + 260, left + 390, left + 520, left + 650]
-    headers = ["ALGORITHM", "EXPANDED", "GENERATED", "HEURISTIC", "DEADLOCK"]
+    name_w = 250
+    col_w = (right - left - name_w) // 6
+    col_font = assets.font("Silkscreen-Bold.ttf", 12)
+    columns = [left] + [left + name_w + i * col_w for i in range(6)]
+    headers = ["ALGORITHM", "EXPANDED", "GENERATED", "CLOSED", "MAX OPEN",
+               "HEURISTIC", "DEADLOCK"]
     for x, text in zip(columns, headers):
-        surface.blit(head_font.render(text, True, TEXT_DIM), (x, 84))
+        surface.blit(col_font.render(text, True, TEXT_DIM), (x, 86))
     pygame.draw.line(surface, PANEL_EDGE, (left, 106), (right, 106), 2)
 
     top = 116
@@ -835,8 +843,10 @@ def draw_comparison(surface, assets, results, level_index):
 
         for key, x in (("expanded", columns[1]),
                        ("generated", columns[2]),
-                       ("heuristic_calls", columns[3]),
-                       ("deadlock_checks", columns[4])):
+                       ("closed_size", columns[3]),
+                       ("max_open", columns[4]),
+                       ("heuristic_calls", columns[5]),
+                       ("deadlock_checks", columns[6])):
             if key in ("expanded", "generated") and result["goal"] is None:
                 text = "limit reached" if result["limit_reached"] \
                     else "no solution"
@@ -886,8 +896,9 @@ def draw_comparison(surface, assets, results, level_index):
                          (bar_x + bar_w + 8, y + 2))
 
     note = small_font.render(
-        "fewest expanded nodes = best (gold); limit = %d nodes"
-        % DEFAULT_NODE_LIMIT, True, TEXT_DIM)
+        "fewest expanded nodes = best (gold); CLOSED = expanded, "
+        "MAX OPEN = biggest frontier; limit = %d" % DEFAULT_NODE_LIMIT,
+        True, TEXT_DIM)
     surface.blit(note, note.get_rect(centerx=width // 2, y=672))
     close = small_font.render("C / ESC   close", True, LAVENDER)
     surface.blit(close, close.get_rect(centerx=width // 2, y=698))
@@ -934,6 +945,9 @@ def run_all_algorithms(puzzle, node_limit=DEFAULT_NODE_LIMIT):
             goal, expanded = bfs(puzzle, stats, node_limit=node_limit)
             generated = stats.get("generated", 0)
             limit_reached = stats.get("limit_reached", False)
+            open_size = stats.get("open_size", 0)
+            closed_size = stats.get("closed_size", 0)
+            max_open = stats.get("max_open", 0)
             heuristic_calls = 0
             deadlock_checks = 0
         else:
@@ -942,6 +956,9 @@ def run_all_algorithms(puzzle, node_limit=DEFAULT_NODE_LIMIT):
             goal, expanded = found
             generated = found.generated
             limit_reached = found.limit_reached
+            open_size = found.open_size
+            closed_size = found.closed_size
+            max_open = found.max_open
             heuristic_calls = found.heuristic_calls
             deadlock_checks = found.deadlock_checks
 
@@ -952,6 +969,9 @@ def run_all_algorithms(puzzle, node_limit=DEFAULT_NODE_LIMIT):
             "cost": goal.g if goal is not None else 0,
             "expanded": expanded,
             "generated": generated,
+            "open_size": open_size,
+            "closed_size": closed_size,
+            "max_open": max_open,
             "heuristic_calls": heuristic_calls,
             "deadlock_checks": deadlock_checks,
             "limit_reached": limit_reached,
@@ -974,6 +994,8 @@ def make_player(puzzle, results, algorithm, delay):
                                 delay)
     player.algorithm = result["label"]
     player.generated = result["generated"]
+    player.open_size = result["open_size"]
+    player.closed_size = result["closed_size"]
     return player
 
 

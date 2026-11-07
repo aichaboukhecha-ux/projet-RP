@@ -1,4 +1,11 @@
-"""Runs BFS and the four A* versions on the 7 boards and writes benchmark.csv.
+"""Runs BFS and the A* versions on the 7 boards and writes benchmark.csv.
+
+The five main algorithms are BFS, A* h1, A* h2, A* h3 and A* h3+deadlock.
+Two extra runs (A* h1+deadlock, A* h2+deadlock) show what the deadlock filter
+does with the weaker heuristics (section 6 of report.md).
+
+OPEN / CLOSED columns: `closed` = nodes expanded and kept in CLOSED at the
+end, `open_end` = nodes left in OPEN at the end, `max_open` = biggest OPEN.
 
 Run: python benchmark.py
 """
@@ -20,6 +27,11 @@ ALGORITHMS = [
     ("A* h3+deadlock", h3, True),
 ]
 
+EXTRA = [
+    ("A* h1+deadlock", h1, True),
+    ("A* h2+deadlock", h2, True),
+]
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(HERE, "benchmark.csv")
 
@@ -37,6 +49,9 @@ def run_one(method, heuristic, use_deadlock, state):
         goal, expanded = bfs(state, stats, node_limit=DEFAULT_NODE_LIMIT)
         generated = stats.get("generated", 0)
         limit_reached = stats.get("limit_reached", False)
+        open_end = stats.get("open_size", 0)
+        closed = stats.get("closed_size", 0)
+        max_open = stats.get("max_open", 0)
         heuristic_calls = 0
         deadlock_checks = 0
     else:
@@ -45,6 +60,9 @@ def run_one(method, heuristic, use_deadlock, state):
         goal, expanded = result
         generated = result.generated
         limit_reached = result.limit_reached
+        open_end = result.open_size
+        closed = result.closed_size
+        max_open = result.max_open
         heuristic_calls = result.heuristic_calls
         deadlock_checks = result.deadlock_checks
 
@@ -63,6 +81,9 @@ def run_one(method, heuristic, use_deadlock, state):
         "actions": actions,
         "expanded": expanded,
         "generated": generated,
+        "closed": closed,
+        "open_end": open_end,
+        "max_open": max_open,
         "heuristic_calls": heuristic_calls,
         "deadlock_checks": deadlock_checks,
         "status": status,
@@ -73,7 +94,7 @@ def benchmark():
     rows = []
     for board, ascii_board in all_boards():
         state = parse_board(ascii_board)
-        for method, heuristic, use_deadlock in ALGORITHMS:
+        for method, heuristic, use_deadlock in ALGORITHMS + EXTRA:
             result = run_one(method, heuristic, use_deadlock, state)
             result["board"] = board
             rows.append(result)
@@ -84,7 +105,7 @@ def benchmark():
 
 def write_csv(rows, path=CSV_PATH):
     fields = ["board", "method", "cost", "expanded", "generated",
-              "heuristic_calls", "deadlock_checks", "status", "actions"]
+              "closed", "open_end", "max_open", "heuristic_calls", "deadlock_checks", "status", "actions"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
@@ -102,9 +123,9 @@ def preview(actions, count=6):
 
 
 def print_table(rows):
-    header = "%-18s %-14s %5s %9s %9s %10s %10s %-12s %s" % (
-        "board", "method", "cost", "expanded", "generated",
-        "heuristic", "deadlock", "status", "solution")
+    header = "%-18s %-16s %5s %9s %9s %8s %8s %10s %10s %-12s %s" % (
+        "board", "method", "cost", "expanded", "generated", "closed",
+        "maxopen", "heuristic", "deadlock", "status", "solution")
     line = "-" * len(header)
     print()
     print(line)
@@ -112,9 +133,10 @@ def print_table(rows):
     print(line)
     for row in rows:
         cost = "n/a" if row["cost"] is None else str(row["cost"])
-        print("%-18s %-14s %5s %9d %9d %10d %10d %-12s %s" % (
+        print("%-18s %-16s %5s %9d %9d %8d %8d %10d %10d %-12s %s" % (
             row["board"], row["method"], cost, row["expanded"],
-            row["generated"], row["heuristic_calls"],
+            row["generated"], row["closed"], row["max_open"],
+            row["heuristic_calls"],
             row["deadlock_checks"], row["status"],
             preview(row["actions"])))
     print(line)
@@ -130,6 +152,29 @@ def print_totals(rows):
         deadlock = sum(r["deadlock_checks"] for r in chosen)
         print("%-14s expanded=%-7d generated=%-7d heuristic=%-7d deadlock=%d"
               % (method, expanded, generated, heuristic, deadlock))
+
+
+def print_deadlock_effect(rows):
+    """Expanded nodes with and without the deadlock filter (report section 6)."""
+    pairs = [("h1", "A* h1", "A* h1+deadlock"), ("h2", "A* h2", "A* h2+deadlock"),
+             ("h3", "A* h3", "A* h3+deadlock")]
+    print("\nExpanded nodes, without -> with the deadlock filter")
+    boards = []
+    for r in rows:
+        if r["board"] not in boards:
+            boards.append(r["board"])
+    totals = {name: [0, 0] for name, _, _ in pairs}
+    for board in boards:
+        cells = []
+        for name, plain, filtered in pairs:
+            a = next(r for r in rows if r["board"] == board and r["method"] == plain)
+            b = next(r for r in rows if r["board"] == board and r["method"] == filtered)
+            totals[name][0] += a["expanded"]
+            totals[name][1] += b["expanded"]
+            cells.append("%s %6d -> %6d" % (name, a["expanded"], b["expanded"]))
+        print("  %-16s %s" % (board, "   ".join(cells)))
+    print("  %-16s %s" % ("TOTAL", "   ".join(
+        "%s %6d -> %6d" % (n, t[0], t[1]) for n, t in totals.items())))
 
 
 def print_figure7(rows):
@@ -154,6 +199,7 @@ def main():
     rows = benchmark()
     print_table(rows)
     print_totals(rows)
+    print_deadlock_effect(rows)
     print_figure7(rows)
     path = write_csv(rows)
     print("\nCSV written to %s" % path)
