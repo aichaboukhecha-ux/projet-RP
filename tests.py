@@ -229,8 +229,213 @@ check("caption uses the new name", gui.CAPTION == "Sokoban Fairy Puzzle",
 
 
 # ---------------------------------------------------------------------------
+print("\n== 7. successor rules: the model really matches the spec ==")
+from boxgame import Node, SokobanPuzzle            # noqa: E402
+from search import (bfs, astar, h1, h2, h3,        # noqa: E402
+                    SearchResult, DEFAULT_NODE_LIMIT, DEFAULT_TIMEOUT)
+from figure4_boards import boards as figure4_boards  # noqa: E402
+
+
+def actions_of(state):
+    return {a for a, _ in state.successorFunction()}
+
+
+# open floor in front of the box: every direction is legal
+b1 = parse_board(["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"])
+succ = {a: s for a, s in b1.successorFunction()}
+check("open floor: all four directions are successors",
+      set(succ) == {"UP", "DOWN", "LEFT", "RIGHT"}, str(sorted(succ)))
+check("a push moves the player into the box's old cell",
+      succ["LEFT"].player == (2, 2), str(succ["LEFT"].player))
+check("a push moves the box exactly one cell",
+      succ["LEFT"].boxes == frozenset({(2, 1)}), str(sorted(succ["LEFT"].boxes)))
+check("a push leaves walls and targets untouched",
+      succ["LEFT"].walls == b1.walls and succ["LEFT"].targets == b1.targets)
+check("no pull: the box stays put when the player walks away",
+      all(succ[a].boxes == b1.boxes for a in ("UP", "DOWN", "RIGHT")))
+check("no jump: every successor is a single step from the player",
+      all(abs(succ[a].player[0] - b1.player[0])
+          + abs(succ[a].player[1] - b1.player[1]) == 1 for a in succ))
+check("the player never lands on top of a box",
+      all(succ[a].player not in succ[a].boxes for a in succ))
+
+# box with a wall directly behind it
+b2 = parse_board(["OOOOOO", "O S  O", "OOBOR ", "O    O", "OOOOOO"])
+check("no push into a wall", "LEFT" not in actions_of(b2),
+      str(sorted(actions_of(b2))))
+
+# two boxes side by side
+b3 = parse_board(["OOOOOO", "O S  O", "O BBRO", "O S  O", "OOOOOO"])
+check("no push into a second box", "LEFT" not in actions_of(b3),
+      str(sorted(actions_of(b3))))
+check("...and the legal moves still work",
+      actions_of(b3) == {"UP", "DOWN"}, str(sorted(actions_of(b3))))
+
+# the board edge is not a wall, so leaving the grid must be rejected too
+b4 = parse_board(["  RB", "  S "])
+check("no push off the grid", "RIGHT" not in actions_of(b4),
+      str(sorted(actions_of(b4))))
+check("no walk off the grid", "UP" not in actions_of(b4),
+      str(sorted(actions_of(b4))))
+
+
+# ---------------------------------------------------------------------------
+print("\n== 8. isGoal: any box on any target, in any order ==")
+on_target = parse_board(["OOOOOO", "O ** O", "O    O", "O R  O", "OOOOOO"])
+check("every target covered -> goal", on_target.isGoal())
+
+off_target = parse_board(["OOOOOO", "O *S O", "O  B O", "O R  O", "OOOOOO"])
+check("one empty target -> not a goal", not off_target.isGoal(),
+      str(sorted(off_target.targets - off_target.boxes)))
+
+# which box sits on which target must not matter
+swapped = SokobanPuzzle(targets={(1, 3), (2, 1)}, walls=frozenset(),
+                        boxes={(1, 3), (2, 1)}, player=(3, 3),
+                        height=4, width=4)
+check("isGoal ignores which box is on which target", swapped.isGoal())
+
+# documented reading of the spec: extra boxes beyond the targets still count,
+# because parse_board enforces equal counts, so targets <= boxes and
+# boxes <= targets are the same test on every board we can actually build.
+extra = SokobanPuzzle(targets={(1, 1)}, walls=frozenset(),
+                      boxes={(1, 1), (2, 2)}, player=(0, 0),
+                      height=4, width=4)
+check("isGoal only requires every target to hold a box", extra.isGoal())
+
+
+# ---------------------------------------------------------------------------
+print("\n== 9. Node.setF / getPath / getSolution ==")
+root = Node(parse_board(["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"]))
+check("a fresh node starts with f == g", root.f == root.g, str(root.f))
+check("setF returns g + h(state)",
+      root.setF(h1) == root.g + h1(root.state),
+      "%d == %d + %d" % (root.f, root.g, h1(root.state)))
+check("setF stores the value on the node", root.f == root.g + h1(root.state))
+
+child_state = dict(root.state.successorFunction())["LEFT"]
+child = Node(child_state, root, "LEFT", 1)
+child.setF(h1)
+check("child f = g + h through setF",
+      child.f == child.g + h1(child.state),
+      "%d == %d + %d" % (child.f, child.g, h1(child.state)))
+check("setF works with any callable", Node(child_state, root, "LEFT", 1)
+      .setF(lambda s: 42) == 1 + 42)
+
+check("getPath returns the state chain root -> node",
+      child.getPath()[0] is root.state and child.getPath()[-1] is child.state)
+check("getPath length is depth + 1", len(child.getPath()) == 2,
+      str(len(child.getPath())))
+check("getSolution lists the actions in order",
+      child.getSolution() == ["LEFT"], str(child.getSolution()))
+check("solution length equals g", len(child.getSolution()) == child.g)
+check("the root has an empty solution", root.getSolution() == [])
+check("getPath states line up with the solution",
+      [s.player for s in child.getPath()] == [root.state.player,
+                                              child.state.player])
+
+
+# ---------------------------------------------------------------------------
+print("\n== 10. h1 / h2 / h3 on a hand-built board (h2 is inadmissible) ==")
+# box two cells from its target, player already beside it, so two pushes win.
+tiny = parse_board(["OOOOO", "OS BR", "OOOOO"])
+print("     board: " + " / ".join(["OOOOO", "OS BR", "OOOOO"]))
+print("     h1=%d  h2=%d  h3=%d" % (h1(tiny), h2(tiny), h3(tiny)))
+
+check("h1 counts misplaced boxes", h1(tiny) == 1, str(h1(tiny)))
+check("h2 = 2*left + distance sum", h2(tiny) == 4, str(h2(tiny)))
+check("h3 = matching + player walk", h3(tiny) == 2, str(h3(tiny)))
+
+tiny_goal, _ = bfs(tiny)
+opt = tiny_goal.g
+check("BFS optimum is 2 pushes", opt == 2, str(opt))
+check("h1 <= optimum (admissible)", h1(tiny) <= opt,
+      "%d <= %d" % (h1(tiny), opt))
+check("h3 <= optimum (admissible)", h3(tiny) <= opt,
+      "%d <= %d" % (h3(tiny), opt))
+check("h2 > optimum, so h2 is INADMISSIBLE", h2(tiny) > opt,
+      "h2=%d vs optimum=%d" % (h2(tiny), opt))
+
+for label, heu in (("h1", h1), ("h2", h2), ("h3", h3)):
+    res = astar(tiny, heu)
+    check("A*(%s) still reaches the goal" % label,
+          res.goal is not None and not res.timed_out, str(res.cost))
+
+
+# ---------------------------------------------------------------------------
+print("\n== 11. A* vs BFS, SearchResult, and honest limits ==")
+for name, ascii_board in figure4_boards():
+    st = parse_board(ascii_board)
+    bfs_goal, _ = bfs(st)
+    costs = {}
+    reached = True
+    for label, heu in (("h1", h1), ("h2", h2), ("h3", h3)):
+        res = astar(st, heu)
+        costs[label] = res.cost
+        reached = reached and res.goal is not None and not res.timed_out
+    check("%s: all three A* variants reach a goal" % name, reached,
+          str(costs))
+    check("%s: every A* cost equals the BFS optimum" % name,
+          bfs_goal is not None
+          and all(c == bfs_goal.g for c in costs.values()),
+          "bfs=%s %s" % (bfs_goal.g if bfs_goal else None, costs))
+
+res = astar(parse_board(["OOOOOO", "O S  O", "O BR O", "O    O",
+                         "OOOOOO"]), h1)
+check("SearchResult unpacks exactly like bfs", len(res) == 2
+      and res[0] is not None and isinstance(res[1], int))
+check("SearchResult carries .generated", res.generated > 0,
+      str(res.generated))
+check("SearchResult carries .seconds", res.seconds > 0.0,
+      "%.6f" % res.seconds)
+check("a finished run reports timed_out False", res.timed_out is False)
+check("SearchResult.cost mirrors goal.g", res.cost == res.goal.g)
+check("SearchResult.goal mirrors the pair", res.goal is res[0])
+
+# --- node limit must be honoured exactly --------------------------------
+limit_board = parse_board(list(figure4_boards())[-1][1])   # exemple5
+limited = astar(limit_board, h1, node_limit=25, timeout=None)
+check("node_limit=25 stops at exactly 25 expansions",
+      limited[1] == 25, str(limited[1]))
+check("a node limit is reported as timed_out",
+      limited.timed_out is True and limited.goal is None)
+
+# --- wall clock limit ---------------------------------------------------
+rushed = astar(limit_board, h1, node_limit=None, timeout=1e-4)
+check("a 0.1 ms timeout stops the search",
+      rushed.timed_out is True and rushed.goal is None,
+      "expanded=%d" % rushed[1])
+check("a timeout still reports honest counts",
+      rushed[1] >= 0 and rushed.generated >= 1,
+      "expanded=%d generated=%d" % (rushed[1], rushed.generated))
+
+# --- no solution at all -------------------------------------------------
+unsolvable = parse_board(["OOOOOO", "OBOOOO", "OO    ", "OSR  O", "OOOOOO"])
+u_goal, u_expanded = bfs(unsolvable)
+check("BFS reports no solution", u_goal is None, str(u_expanded))
+u_res = astar(unsolvable, h1, node_limit=DEFAULT_NODE_LIMIT,
+              timeout=DEFAULT_TIMEOUT)
+check("A* reports NO-SOLUTION, not a timeout",
+      u_res.goal is None and u_res.timed_out is False)
+check("A* really exhausted the frontier", u_res[1] > 0,
+      str(u_res[1]))
+
+# --- bfs keeps its old contract ----------------------------------------
+plain = bfs(parse_board(["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"]))
+check("bfs() without stats still returns a plain pair",
+      len(plain) == 2 and not hasattr(plain, "generated"))
+stats = {}
+bfs(parse_board(["OOOOOO", "O S  O", "O BR O", "O    O", "OOOOOO"]), stats)
+check("bfs() fills the optional stats dict",
+      stats.get("generated", 0) >= 1 and stats.get("seconds", 0.0) > 0.0
+      and stats.get("timed_out") is False, str(stats))
+check("the published limits are the ones we tested against",
+      DEFAULT_NODE_LIMIT == 400000 and DEFAULT_TIMEOUT == 15.0,
+      "%s / %s" % (DEFAULT_NODE_LIMIT, DEFAULT_TIMEOUT))
+
+
+# ---------------------------------------------------------------------------
 if REAL:
-    print("\n== 7. real fullscreen: button + F11 ==")
+    print("\n== 12. real fullscreen: button + F11 ==")
     observed = {}
 
     def driver():

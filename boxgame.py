@@ -130,6 +130,18 @@ class Node:
         self.parent = parent
         self.action = action
         self.g = g
+        # f = g + h.  For uninformed search (BFS) h is 0, so f starts at g;
+        # A* refreshes it through setF() before pushing onto the frontier.
+        self.f = g
+
+    def setF(self, heuristic):
+        """f(n) = g(n) + h(n), with h evaluated on this node's state.
+
+        `heuristic` is any callable state -> int.  Returns f, so the value
+        can be used inline when pushing onto the priority queue.
+        """
+        self.f = self.g + heuristic(self.state)
+        return self.f
 
     def getPath(self):
         path, cur = [], self
