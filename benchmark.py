@@ -4,8 +4,8 @@ The five main algorithms are BFS, A* h1, A* h2, A* h3 and A* h3+deadlock.
 Two extra runs (A* h1+deadlock, A* h2+deadlock) show what the deadlock filter
 does with the weaker heuristics (section 6 of report.md).
 
-OPEN / CLOSED columns: `closed` = nodes expanded and kept in CLOSED at the
-end, `open_end` = nodes left in OPEN at the end, `max_open` = biggest OPEN.
+The printed comparison shows the theoretical complexity, the cost and the
+nodes (expanded, generated).  benchmark.csv keeps every counter.
 
 Run: python benchmark.py
 """
@@ -31,6 +31,16 @@ EXTRA = [
     ("A* h1+deadlock", h1, True),
     ("A* h2+deadlock", h2, True),
 ]
+
+THEORY = {
+    "BFS": "O(b^d) time / space",
+    "A* h1": "O(b^d) h O(B)",
+    "A* h2": "O(b^d) h O(B*T)",
+    "A* h3": "O(b^d) h O(B^2*2^B)",
+    "A* h3+deadlock": "O(b^d) h O(B^2*2^B) + O(B)",
+    "A* h1+deadlock": "O(b^d) h O(B)",
+    "A* h2+deadlock": "O(b^d) h O(B*T)",
+}
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(HERE, "benchmark.csv")
@@ -116,16 +126,10 @@ def write_csv(rows, path=CSV_PATH):
     return path
 
 
-def preview(actions, count=6):
-    if len(actions) <= count:
-        return " ".join(actions)
-    return " ".join(actions[:count]) + " ..."
-
-
 def print_table(rows):
-    header = "%-18s %-16s %5s %9s %9s %8s %8s %10s %10s %-12s %s" % (
-        "board", "method", "cost", "expanded", "generated", "closed",
-        "maxopen", "heuristic", "deadlock", "status", "solution")
+    header = "%-18s %-16s %-28s %5s %9s %9s %-12s" % (
+        "board", "method", "complexity", "cost", "expanded", "generated",
+        "status")
     line = "-" * len(header)
     print()
     print(line)
@@ -133,25 +137,20 @@ def print_table(rows):
     print(line)
     for row in rows:
         cost = "n/a" if row["cost"] is None else str(row["cost"])
-        print("%-18s %-16s %5s %9d %9d %8d %8d %10d %10d %-12s %s" % (
-            row["board"], row["method"], cost, row["expanded"],
-            row["generated"], row["closed"], row["max_open"],
-            row["heuristic_calls"],
-            row["deadlock_checks"], row["status"],
-            preview(row["actions"])))
+        print("%-18s %-16s %-28s %5s %9d %9d %-12s" % (
+            row["board"], row["method"], THEORY.get(row["method"], "-"),
+            cost, row["expanded"], row["generated"], row["status"]))
     print(line)
 
 
 def print_totals(rows):
-    print("\nTotals over the seven boards")
+    print("\nTotals over the seven boards (nodes)")
     for method, _, _ in ALGORITHMS:
         chosen = [r for r in rows if r["method"] == method]
         expanded = sum(r["expanded"] for r in chosen)
         generated = sum(r["generated"] for r in chosen)
-        heuristic = sum(r["heuristic_calls"] for r in chosen)
-        deadlock = sum(r["deadlock_checks"] for r in chosen)
-        print("%-14s expanded=%-7d generated=%-7d heuristic=%-7d deadlock=%d"
-              % (method, expanded, generated, heuristic, deadlock))
+        print("%-14s expanded=%-7d generated=%d"
+              % (method, expanded, generated))
 
 
 def print_deadlock_effect(rows):

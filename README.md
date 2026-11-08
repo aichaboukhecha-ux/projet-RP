@@ -21,7 +21,7 @@ python benchmark.py
 - `-` `+` speed
 - `[` `]` previous / next level (13 levels)
 - `A` change the algorithm: BFS, A* h1, A* h2, A* h3, A* h3+deadlock
-- `C` open / close the comparison screen
+- `C` open / close the comparison screen (complexity, cost, expanded, generated)
 - `F11` fullscreen, `ESC` quit
 
 ## How to read the numbers
@@ -30,6 +30,8 @@ python benchmark.py
 - **Generated**: nodes created.
 - Fewer is better. All algorithms return the same cost on the test boards.
 - `limit reached` means the search stopped at 400000 expanded nodes.
+- The heuristic-call and deadlock-check counters are kept in
+  `benchmark.csv`, not in the on-screen comparison.
 
 ## Files
 
@@ -42,6 +44,7 @@ python benchmark.py
 - `tests.py` - tests (they run without a window)
 - `report.md` - report with tables and solutions
 - `EXPLAIN_LIKE_IM_5.md` - the code explained in simple words
+- `EXPLANATION.md` - the long line-by-line explanation of every file
 - `main.py` - tiny console demo
 - `puzzle.py` - first, very simple viewer (not used any more)
 - `assets/` - images, fonts, sounds

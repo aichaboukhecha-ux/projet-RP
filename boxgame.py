@@ -35,7 +35,7 @@ class SokobanPuzzle:
         return self.targets <= self.boxes   # every target holds a box
 
     def stateKey(self):
-        return (self.player, tuple(sorted(self.boxes)))
+        return (self.player, tuple(sorted(self.boxes)))  # unique state name
 
     def __eq__(self, other):
         return self.stateKey() == other.stateKey()
@@ -45,7 +45,7 @@ class SokobanPuzzle:
 
     def successorFunction(self):
         successors = []
-        for action, (dr, dc) in self.DIRECTIONS.items():
+        for action, (dr, dc) in self.DIRECTIONS.items():   # four directions
             nxt = (self.player[0] + dr, self.player[1] + dc)
 
             if not self.isInside(nxt) or nxt in self.walls:
@@ -56,7 +56,7 @@ class SokobanPuzzle:
                 dest = (nxt[0] + dr, nxt[1] + dc)
                 if (not self.isInside(dest) or dest in self.walls
                         or dest in self.boxes):
-                    continue
+                    continue                           # box cannot move
                 new_boxes.remove(nxt)
                 new_boxes.add(dest)
 
@@ -98,7 +98,7 @@ def parse_board(board):
 
     for row in board:
         if len(row) != width:
-            raise ValueError("All rows must have the same length.")
+            raise ValueError("All rows must have the same length.")  # rectangle
 
     for r in range(height):
         for c in range(width):

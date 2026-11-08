@@ -79,10 +79,10 @@ DEFAULT_SPEED = 1                        # index -> 700 ms
 # label, heuristic, use_deadlock, theoretical complexity
 ALGORITHMS = [
     ("BFS", None, False, "O(b^d) time / space"),
-    ("A* h1", h1, False, "O(b^d) worst; h O(B)"),
-    ("A* h2", h2, False, "O(b^d) worst; h O(B*T)"),
-    ("A* h3", h3, False, "O(b^d) worst; h O(B*2^B)"),
-    ("A* h3+deadlock", h3, True, "O(b^d) worst; h O(B*2^B)+O(B)"),
+    ("A* h1", h1, False, "O(b^d) h O(B)"),
+    ("A* h2", h2, False, "O(b^d) h O(B*T)"),
+    ("A* h3", h3, False, "O(b^d) h O(B^2*2^B)"),
+    ("A* h3+deadlock", h3, True, "O(b^d) h O(B^2*2^B) + O(B)"),
 ]
 
 ACTION_TO_DIR = {
@@ -790,7 +790,7 @@ def short_label(label):
 
 
 def draw_comparison(surface, assets, results, level_index):
-    """Table and scaled bars for the five cached algorithm runs."""
+    """Complexity, cost, expanded and generated nodes for the cached runs."""
     width, height = surface.get_size()
     surface.fill(BG_DEEP)
 
@@ -816,14 +816,15 @@ def draw_comparison(surface, assets, results, level_index):
 
     left = 40
     right = width - 40
-    name_w = 250
-    col_w = (right - left - name_w) // 6
-    col_font = assets.font("Silkscreen-Bold.ttf", 12)
-    columns = [left] + [left + name_w + i * col_w for i in range(6)]
-    headers = ["ALGORITHM", "EXPANDED", "GENERATED", "CLOSED", "MAX OPEN",
-               "HEURISTIC", "DEADLOCK"]
+    usable = right - left
+    columns = [left,
+               left + int(usable * 0.30),     # complexity
+               left + int(usable * 0.56),     # cost
+               left + int(usable * 0.70),     # expanded
+               left + int(usable * 0.84)]     # generated
+    headers = ["ALGORITHM", "COMPLEXITY", "COST", "EXPANDED", "GENERATED"]
     for x, text in zip(columns, headers):
-        surface.blit(col_font.render(text, True, TEXT_DIM), (x, 86))
+        surface.blit(head_font.render(text, True, TEXT_DIM), (x, 86))
     pygame.draw.line(surface, PANEL_EDGE, (left, 106), (right, 106), 2)
 
     top = 116
@@ -837,17 +838,15 @@ def draw_comparison(surface, assets, results, level_index):
 
         name_color = GOLD if i == best else LAVENDER
         surface.blit(row_font.render(result["label"], True, name_color),
-                     (columns[0], y + 4))
+                     (columns[0], y + 20))
         surface.blit(small_font.render(result["theory"], True, TEXT_DIM),
-                     (columns[0], y + 28))
+                     (columns[1], y + 22))
+        cost = str(result["cost"]) if result["goal"] is not None else "-"
+        surface.blit(row_font.render(cost, True, TEXT), (columns[2], y + 20))
 
-        for key, x in (("expanded", columns[1]),
-                       ("generated", columns[2]),
-                       ("closed_size", columns[3]),
-                       ("max_open", columns[4]),
-                       ("heuristic_calls", columns[5]),
-                       ("deadlock_checks", columns[6])):
-            if key in ("expanded", "generated") and result["goal"] is None:
+        for key, x in (("expanded", columns[3]),
+                       ("generated", columns[4])):
+            if result["goal"] is None:
                 text = "limit reached" if result["limit_reached"] \
                     else "no solution"
                 surface.blit(small_font.render(text, True, PINK), (x, y + 20))
@@ -896,9 +895,8 @@ def draw_comparison(surface, assets, results, level_index):
                          (bar_x + bar_w + 8, y + 2))
 
     note = small_font.render(
-        "fewest expanded nodes = best (gold); CLOSED = expanded, "
-        "MAX OPEN = biggest frontier; limit = %d" % DEFAULT_NODE_LIMIT,
-        True, TEXT_DIM)
+        "fewest expanded nodes = best (gold); limit = %d nodes"
+        % DEFAULT_NODE_LIMIT, True, TEXT_DIM)
     surface.blit(note, note.get_rect(centerx=width // 2, y=672))
     close = small_font.render("C / ESC   close", True, LAVENDER)
     surface.blit(close, close.get_rect(centerx=width // 2, y=698))

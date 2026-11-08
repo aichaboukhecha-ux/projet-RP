@@ -1,5 +1,7 @@
 # The code explained like you are 5
 
+For the long, line-by-line version, see `EXPLANATION.md`.
+
 ## The game
 
 You are a little worker in a room. There are boxes on the floor and some
@@ -73,7 +75,7 @@ It always tries the photo with the smallest score. A good compass means fewer
 photos to look at. There are three compasses:
 
 - **h1**: count the boxes that are not on a target. Simple, but weak.
-- **h2** (the teacher's): count the misplaced boxes twice, and add the distance
+- **h2** : count the misplaced boxes twice, and add the distance
   from each box to its closest target "as a bird flies".
 - **h3** (ours): we compute the *real* number of pushes a box needs, with the
   walls in the way (a bird can fly over a wall, a box cannot). We give every
