@@ -807,13 +807,6 @@ def draw_comparison(surface, assets, results, level_index):
         True, PINK)
     surface.blit(sub, sub.get_rect(centerx=width // 2, y=48))
 
-    best = None
-    for i, result in enumerate(results):
-        if result["goal"] is None:
-            continue
-        if best is None or result["expanded"] < results[best]["expanded"]:
-            best = i
-
     left = 40
     right = width - 40
     usable = right - left
@@ -831,13 +824,7 @@ def draw_comparison(surface, assets, results, level_index):
     row_h = 62
     for i, result in enumerate(results):
         y = top + i * row_h
-        rect = pygame.Rect(left - 8, y, right - left + 16, row_h - 6)
-        if i == best:
-            pygame.draw.rect(surface, (60, 48, 30), rect, border_radius=8)
-            pygame.draw.rect(surface, GOLD, rect, 2, border_radius=8)
-
-        name_color = GOLD if i == best else LAVENDER
-        surface.blit(row_font.render(result["label"], True, name_color),
+        surface.blit(row_font.render(result["label"], True, LAVENDER),
                      (columns[0], y + 20))
         surface.blit(small_font.render(result["theory"], True, TEXT_DIM),
                      (columns[1], y + 22))
@@ -884,19 +871,17 @@ def draw_comparison(surface, assets, results, level_index):
 
             value = result[key]
             filled = max(2, int(bar_w * value / max_value))
-            color = GOLD if i == best else LAVENDER_DIM
             pygame.draw.rect(surface, (33, 21, 49),
                              pygame.Rect(bar_x, y, bar_w, 18),
                              border_radius=5)
-            pygame.draw.rect(surface, color,
+            pygame.draw.rect(surface, LAVENDER_DIM,
                              pygame.Rect(bar_x, y, filled, 18),
                              border_radius=5)
             surface.blit(small_font.render(str(value), True, TEXT),
                          (bar_x + bar_w + 8, y + 2))
 
     note = small_font.render(
-        "fewest expanded nodes = best (gold); limit = %d nodes"
-        % DEFAULT_NODE_LIMIT, True, TEXT_DIM)
+        "limit = %d nodes" % DEFAULT_NODE_LIMIT, True, TEXT_DIM)
     surface.blit(note, note.get_rect(centerx=width // 2, y=672))
     close = small_font.render("C / ESC   close", True, LAVENDER)
     surface.blit(close, close.get_rect(centerx=width // 2, y=698))

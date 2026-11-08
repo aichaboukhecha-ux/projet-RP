@@ -1380,8 +1380,9 @@ En dessous :
 - un graphique en barres pour `GENERATED`.
 
 Chaque barre est dessinée avec `pygame.draw.rect`, mise à l'échelle de la
-plus grande valeur du graphique et étiquetée avec le nombre. Le meilleur
-algorithme (le moins de nœuds développés) est en or. Si une exécution a
+plus grande valeur du graphique et étiquetée avec le nombre. Toutes les
+lignes et toutes les barres ont la même couleur lavande (pas de ligne
+« meilleure » mise à part). Si une exécution a
 atteint la limite, le texte `limit reached` remplace la barre.
 
 ### 12.5 Touches

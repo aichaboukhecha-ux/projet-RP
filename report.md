@@ -491,9 +491,9 @@ unchanged.
   expanded nodes and the generated nodes. Below the table, two horizontal
   `pygame.draw.rect` bar charts show expanded and generated nodes, each
   scaled to the largest value of its chart and labelled with the number.
-  The best algorithm (fewest expanded nodes) is highlighted in gold. A
-  limit-reached run shows the text `limit reached` in place of a bar. No
-  seconds are shown anywhere.
+  All rows and bars share the same lavender colour; no best row is
+  highlighted. A limit-reached run shows the text `limit reached` in place
+  of a bar. No seconds are shown anywhere.
 - The five algorithms run once when a level is loaded, while the existing
   "Solving with 5 algorithms ..." splash is displayed. Switching levels
   shows the same splash, so the window never freezes. The results are kept

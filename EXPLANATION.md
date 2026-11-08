@@ -1739,7 +1739,8 @@ Below the table there are two horizontal bar charts:
 - generated nodes.
 
 Each bar is scaled to the largest value of its chart and labelled with the
-number. The best algorithm (fewest expanded nodes) is highlighted in gold.
+number. The table and the two bar charts use the same lavender colour; no
+row is highlighted specially.
 If a run reached the node limit, the text `limit reached` is shown instead
 of a bar.
 
